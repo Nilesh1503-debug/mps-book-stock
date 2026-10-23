@@ -1,0 +1,123 @@
+<!DOCTYPE html>
+<html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>MPS Book Stock Management</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<style>
+:root{--bg:#f4f1ea;--card:#fff;--tx:#232a3b;--mu:#6b7280;--ac:#c2410c;--ac2:#1e3a8a;--bd:#e5dfd3;--ok:#15803d;--bad:#b91c1c}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--tx);font:14px system-ui,Segoe UI,Arial,sans-serif}
+header{background:linear-gradient(120deg,var(--ac2),#7c2d12);color:#fff;padding:18px 16px;display:flex;gap:12px;align-items:center}
+header .lg{font-size:34px}header b{font-size:19px;display:block}header small{opacity:.85}
+nav{display:flex;gap:6px;overflow-x:auto;padding:10px 12px;background:var(--card);border-bottom:2px solid var(--bd);position:sticky;top:0;z-index:5}
+nav button{border:0;background:none;color:var(--mu);padding:9px 14px;border-radius:20px;cursor:pointer;white-space:nowrap;font:inherit}
+nav button.on{background:var(--ac);color:#fff}
+main{max-width:1100px;margin:0 auto;padding:14px}
+.g{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px;margin-bottom:14px}
+.s{background:var(--card);border:1px solid var(--bd);border-radius:12px;padding:12px;border-left:5px solid var(--ac)}
+.s:nth-child(3n+2){border-left-color:var(--ac2)}.s:nth-child(3n){border-left-color:#0f766e}
+.s i{font-style:normal;font-size:20px}.k{font-size:24px;font-weight:700}.l{color:var(--mu);font-size:12px}
+.c{background:var(--card);border:1px solid var(--bd);border-radius:12px;padding:14px;margin-bottom:12px}
+label{display:block;font-size:12px;color:var(--mu);margin:8px 0 2px}
+input,select{width:100%;padding:8px;border:1px solid var(--bd);border-radius:8px;background:#fff;color:var(--tx);font:inherit}
+.f{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:0 12px}
+button.p{background:var(--ac);color:#fff;border:0;padding:10px 18px;border-radius:8px;cursor:pointer;margin:12px 6px 0 0;font:inherit}
+button.b{background:var(--ac2)}button.q{background:none;border:1px solid var(--bd);color:var(--tx);padding:6px 10px;border-radius:8px;cursor:pointer}
+.t{overflow-x:auto}table{border-collapse:collapse;width:100%}th,td{padding:7px 8px;border-bottom:1px solid var(--bd);text-align:left;white-space:nowrap}
+th{font-size:12px;color:var(--mu);background:#faf7f0}.n{text-align:right}.neg{color:var(--bad);font-weight:600}.pos{color:var(--ok);font-weight:600}
+.bar{height:12px;border-radius:6px;background:linear-gradient(90deg,var(--ac),#f59e0b);min-width:3px}
+#msg{position:fixed;left:50%;transform:translateX(-50%);bottom:18px;background:#222;color:#fff;padding:10px 16px;border-radius:8px;display:none;max-width:90%;z-index:9}
+.note{color:var(--mu);font-size:12px;margin-top:6px}
+@media print{nav,header,.noprint{display:none}}
+</style></head><body>
+<header><div class="lg">📚</div><div><b>Moonat Public School</b><small>Book Stock Management System</small></div></header>
+<nav id="nav"></nav><main id="app"></main><div id="msg"></div>
+<script>
+const $=s=>document.querySelector(s),esc=s=>String(s??"").replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+const fd=d=>new Date(d).toLocaleDateString("en-GB",{timeZone:"Asia/Kolkata"}).replace(/\//g,"-");
+const KEY="mps_book_stock_v1";let S={books:[],ledger:[],recs:[]};
+try{S=Object.assign(S,JSON.parse(localStorage.getItem(KEY))||{})}catch(e){}
+const save=()=>{try{localStorage.setItem(KEY,JSON.stringify(S))}catch(e){toast("Browser storage blocked or full")}};
+function toast(m){const e=$("#msg");e.textContent=m;e.style.display="block";clearTimeout(toast.t);toast.t=setTimeout(()=>e.style.display="none",4000)}
+const TABS=["Dashboard","Books","Transactions","Ledger","Reconciliation","Export / Backup"];let tab="Dashboard",txType="receive",rid=null;
+const TYPES={opening:["Opening stock",["dmg"]],receive:["Book received (GRN)",["rej","inv","vendor"]],issue:["Book issued",["to","ret"]],return:["Book returned",["issue","cond"]],damage:["Mark usable books damaged",["why"]],restore:["Restore repaired books to usable",["why"]],writeoff:["Write off damaged books",["why"]],lost:["Confirm books lost",["why"]],adjust:["Inventory adjustment (+/-)",["why"]]};
+const bt=id=>S.books.find(b=>b.id===id)?.title||id;
+// stock engine: balances are always derived from ledger entries
+function stock(id,upTo){const s={u:0,i:0,d:0,l:0,w:0};for(const e of S.ledger){if(e.bookId!==id||(upTo&&e.ts>upTo))continue;for(const k in e.d)s[k]+=e.d[k]}return s}
+function outstanding(ref){const i=S.ledger.find(e=>e.ref===ref);return i?i.qty-S.ledger.filter(e=>e.type==="return"&&e.link===ref).reduce((a,e)=>a+e.qty,0):0}
+function post(o){const q=+o.qty,b=S.books.find(x=>x.id===o.bookId);
+ if(!b)throw "Select a book";if(!Number.isInteger(q))throw "Enter a whole-number quantity";if(o.type!=="adjust"&&q<=0)throw "Quantity must be more than 0";if(o.type==="adjust"&&q===0)throw "Change cannot be 0";
+ if(!o.by)throw "Enter your name in Done by";const s=stock(b.id);let d;
+ if(o.type==="opening"){if(S.ledger.some(e=>e.bookId===b.id&&e.type==="opening"))throw "Opening stock already posted. Use an adjustment.";d={u:q,d:+o.dmg||0}}
+ else if(o.type==="receive")d={u:q};
+ else if(o.type==="issue"){if(q>s.u)throw "Cannot issue "+q+". Only "+s.u+" usable copies available";d={u:-q,i:o.ret==="yes"?q:0}}
+ else if(o.type==="return"){const out=outstanding(o.issue);if(!out)throw "Pick an issue with outstanding returnable books";if(q>out)throw "Return exceeds outstanding quantity ("+out+")";d=o.cond==="good"?{u:q,i:-q}:{d:q,i:-q}}
+ else if(o.type==="damage"||o.type==="lost"){if(q>s.u)throw "Only "+s.u+" usable copies";d=o.type==="lost"?{u:-q,l:q}:{u:-q,d:q}}
+ else if(o.type==="restore"||o.type==="writeoff"){if(q>s.d)throw "Only "+s.d+" damaged copies";d=o.type==="restore"?{d:-q,u:q}:{d:-q,w:q}}
+ else{if(!o.why)throw "Reason is required";if(s.u+q<0)throw "Adjustment would make stock negative";d={u:q}}
+ const ref=o.ref||(o.type.slice(0,3).toUpperCase()+"-"+Date.now().toString(36).toUpperCase());
+ if(S.ledger.some(e=>e.ref===ref))throw "Already posted ("+ref+"). Stock unchanged.";
+ S.ledger.push({ref,type:o.type,bookId:b.id,qty:q,d,ts:Date.now(),link:o.issue||o.link||"",ret:o.ret==="yes",by:o.by,note:[o.why,o.inv&&"Invoice "+o.inv,o.vendor,o.to&&"To "+o.to,+o.rej>0&&"Rejected at receipt "+o.rej,o.type==="return"&&o.cond].filter(Boolean).join("; ")});save();return ref}
+function draw(){$("#nav").innerHTML=TABS.map(t=>`<button class="${t===tab?"on":""}" onclick="tab='${t}';rid=null;draw()">${t}</button>`).join("");
+ $("#app").innerHTML={Dashboard:vDash,Books:vBooks,Transactions:vTx,Ledger:vLedger,Reconciliation:vRec,"Export / Backup":vExp}[tab]()}
+function vDash(){const rows=S.books.map(b=>({b,s:stock(b.id)})),sum=k=>rows.reduce((a,r)=>a+r.s[k],0),L=S.ledger,tot=t=>L.filter(e=>e.type===t).reduce((a,e)=>a+e.qty,0);
+ const mx=Math.max(1,...rows.map(r=>r.s.u)),val=rows.reduce((a,r)=>a+r.s.u*(+r.b.price||0),0),low=rows.filter(r=>r.s.u<=(+r.b.min||0)).length;
+ const c=(i,k,l)=>`<div class="s"><i>${i}</i><div class="k">${k}</div><div class="l">${l}</div></div>`;
+ return `<div class="g">${c("📘",S.books.length,"Book titles")}${c("✅",sum("u"),"Usable copies")}${c("📥",tot("receive"),"Received")}${c("📤",tot("issue"),"Issued")}${c("↩️",tot("return"),"Returned")}${c("⏳",sum("i"),"Outstanding returnable")}${c("🩹",sum("d"),"Damaged")}${c("❓",sum("l"),"Lost")}${c("🗑️",sum("w"),"Written off")}${c("⚠️",low,"Low-stock titles")}${c("₹","₹"+val.toLocaleString("en-IN"),"Stock value")}</div>
+ <div class="c"><b>Stock by title</b>${rows.map(r=>`<div style="display:flex;gap:8px;align-items:center;margin-top:7px"><div style="flex:0 0 36%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(r.b.title)}</div><div class="bar" style="width:${r.s.u/mx*55}%"></div><span>${r.s.u}</span></div>`).join("")||'<p class="note">Start in Books: add titles, then post Opening stock in Transactions.</p>'}</div>`}
+function vBooks(){return `<div class="c"><b>Add book title</b><div class="f"><div><label>Title *</label><input id="bt"></div><div><label>Class *</label><input id="bc" placeholder="Class 5"></div><div><label>Medium</label><select id="bm"><option>English</option><option>Hindi</option></select></div><div><label>Subject</label><input id="bs"></div><div><label>ISBN / code</label><input id="bi"></div><div><label>Publisher</label><input id="bp"></div><div><label>Edition</label><input id="be"></div><div><label>Purchase price ₹</label><input id="bpr" type="number" min="0"></div><div><label>Minimum stock</label><input id="bmn" type="number" min="0"></div></div><button class="p" onclick="addBook()">Save book</button></div>
+ <div class="c t"><table><tr><th>ID</th><th>Title</th><th>Class</th><th>Medium</th><th>Subject</th><th>ISBN</th><th class="n">Usable</th><th class="n">Issued</th><th class="n">Damaged</th><th class="n">Lost</th><th class="n">W/off</th></tr>${S.books.map(b=>{const s=stock(b.id);return `<tr><td>${b.id}</td><td>${esc(b.title)}</td><td>${esc(b.cls)}</td><td>${esc(b.medium)}</td><td>${esc(b.subject)}</td><td>${esc(b.isbn)}</td><td class="n">${s.u}</td><td class="n">${s.i}</td><td class="n">${s.d}</td><td class="n">${s.l}</td><td class="n">${s.w}</td></tr>`}).join("")}</table></div>`}
+function addBook(){const v=i=>$("#"+i).value.trim();if(!v("bt")||!v("bc"))return toast("Title and class are required");
+ if(v("bi")&&S.books.some(b=>b.isbn===v("bi")))return toast("This ISBN already exists");
+ const id="BK-"+String(S.books.length+1).padStart(4,"0");S.books.push({id,title:v("bt"),cls:v("bc"),medium:v("bm"),subject:v("bs"),isbn:v("bi"),pub:v("bp"),ed:v("be"),price:+v("bpr")||0,min:+v("bmn")||0});save();toast("Saved "+id);draw()}
+function vTx(){const f=TYPES[txType][1],h=x=>f.includes(x),is=S.ledger.filter(e=>e.type==="issue"&&e.ret&&outstanding(e.ref)>0);
+ return `<div class="c"><div class="f"><div><label>Transaction</label><select onchange="txType=this.value;draw()">${Object.entries(TYPES).map(([k,v])=>`<option value="${k}" ${k===txType?"selected":""}>${v[0]}</option>`).join("")}</select></div>
+ ${h("issue")?`<div><label>Original issue *</label><select id="xis">${is.map(e=>`<option value="${e.ref}">${e.ref} – ${esc(bt(e.bookId))} (outstanding ${outstanding(e.ref)})</option>`).join("")}</select></div><div><label>Condition</label><select id="xc"><option value="good">Good (usable)</option><option value="damaged">Damaged</option></select></div>`:`<div><label>Book *</label><select id="xb">${S.books.map(b=>`<option value="${b.id}">${esc(b.title)} (${esc(b.cls)}, ${esc(b.medium)})</option>`).join("")}</select></div>`}
+ <div><label>${txType==="adjust"?"Quantity change (+/-)":"Quantity *"}</label><input id="xq" type="number"></div>
+ ${h("dmg")?'<div><label>Damaged quantity</label><input id="xd" type="number" min="0" value="0"></div>':""}
+ ${h("rej")?'<div><label>Rejected at receipt (not added)</label><input id="xr" type="number" min="0" value="0"></div><div><label>Invoice no.</label><input id="xi"></div><div><label>Vendor</label><input id="xv"></div>':""}
+ ${h("to")?'<div><label>Issued to</label><input id="xt" placeholder="Student / class / staff"></div><div><label>Returnable?</label><select id="xrt"><option value="no">No</option><option value="yes">Yes</option></select></div>':""}
+ ${h("why")?'<div><label>Reason</label><input id="xw"></div>':""}<div><label>Done by *</label><input id="xby"></div></div>
+ <button class="p" onclick="doTx()">Post transaction</button><p class="note">Posted entries are never deleted. Fix mistakes with an adjustment.</p></div>`}
+function doTx(){const g=i=>$("#"+i)?.value,is=S.ledger.find(e=>e.ref===g("xis"));
+ try{const r=post({type:txType,bookId:is?is.bookId:g("xb"),qty:g("xq"),dmg:g("xd"),rej:g("xr"),inv:g("xi"),vendor:g("xv"),to:g("xt"),ret:g("xrt"),issue:g("xis"),cond:g("xc"),why:g("xw"),by:g("xby")?.trim()});toast("Posted "+r);draw()}catch(e){toast(e.message||String(e))}}
+function vLedger(){return `<div class="c t"><table><tr><th>Date</th><th>Ref</th><th>Type</th><th>Book</th><th class="n">Qty</th><th class="n">Usable</th><th class="n">Issued</th><th class="n">Damaged</th><th class="n">Lost</th><th class="n">W/off</th><th>Note</th><th>By</th></tr>${S.ledger.slice().reverse().map(e=>`<tr><td>${fd(e.ts)}</td><td>${e.ref}</td><td>${TYPES[e.type][0]}</td><td>${esc(bt(e.bookId))}</td><td class="n">${e.qty}</td>${["u","i","d","l","w"].map(k=>`<td class="n ${e.d[k]<0?"neg":e.d[k]>0?"pos":""}">${e.d[k]||""}</td>`).join("")}<td>${esc(e.note)}</td><td>${esc(e.by)}</td></tr>`).join("")}</table></div>`}
+// ---- reconciliation ----
+const cnt=(r,l,k)=>{const v=r.counts?.[l.bookId]?.[k];return v===undefined||v===""||v===null?null:+v};
+function recRows(r){return r.lines.map(l=>{const pu=cnt(r,l,"u"),pd=cnt(r,l,"d"),b=S.books.find(x=>x.id===l.bookId)||{};return {l,b,pu,pd,vu:pu===null?null:pu-l.sys.u,vd:pd===null?null:pd-l.sys.d}})}
+function recSum(r){const R=recRows(r),c=R.filter(x=>x.vu!==null),sn=c.filter(x=>x.vu<0).reduce((a,x)=>a+x.vu,0),sp=c.filter(x=>x.vu>0).reduce((a,x)=>a+x.vu,0);
+ return `Titles counted: <b>${c.length}</b> of ${R.length} · Not counted: <b>${R.length-c.length}</b> · Expected usable (counted titles): <b>${c.reduce((a,x)=>a+x.l.sys.u,0)}</b> · Actual usable: <b>${c.reduce((a,x)=>a+x.pu,0)}</b> · Shortage: <b class="neg">${sn}</b> · Excess: <b class="pos">+${sp}</b> · Net: <b>${sn+sp}</b> · Damaged variance: <b>${R.filter(x=>x.vd!==null).reduce((a,x)=>a+x.vd,0)}</b>`}
+function vRec(){const r=S.recs.find(x=>x.id===rid);
+ if(r){const done=r.status==="posted";return `<div class="c"><button class="q" onclick="rid=null;draw()">← Back</button> <b>${r.id} · ${esc(r.title)}</b> · ${done?"✅ Posted":"Counting"} · Cutoff ${fd(r.cutoff)}
+ <p class="note">Variance = physical usable − system usable at cutoff. Counting does not change stock. Only Approve and post does, once.</p></div>
+ <div class="c t"><table><tr><th>Book</th><th>Class</th><th class="n">System usable</th><th class="n">Physical usable</th><th class="n">Variance</th><th class="n">System damaged</th><th class="n">Physical damaged</th><th class="n">Damaged var.</th></tr>
+ ${recRows(r).map((x,i)=>`<tr><td>${esc(x.b.title)}</td><td>${esc(x.b.cls)}</td><td class="n">${r.blind&&!done?"–":x.l.sys.u}</td><td class="n">${done?(x.pu??""):`<input style="width:80px" type="number" min="0" value="${x.pu??""}" oninput="setC(${i},'u',this.value)">`}</td><td class="n" id="vu${i}">${vtxt(x.vu)}</td><td class="n">${x.l.sys.d}</td><td class="n">${done?(x.pd??""):`<input style="width:80px" type="number" min="0" value="${x.pd??""}" oninput="setC(${i},'d',this.value)">`}</td><td class="n" id="vd${i}">${vtxt(x.vd)}</td></tr>`).join("")}</table></div>
+ <div class="c"><div id="rs">${recSum(r)}</div>${done?`<p>Approved by <b>${esc(r.approver)}</b> on ${fd(r.postedAt)}. Reason: ${esc(r.reason)}.</p>`:`<div class="f"><div><label>Approved by *</label><input id="rap"></div><div><label>Variance reason *</label><input id="rrs"></div></div><button class="p" onclick="postRec()">Approve &amp; post adjustments</button>`}<button class="p b" onclick="exportRec('${r.id}')">Download this reconciliation (Excel)</button><button class="p b noprint" onclick="print()">Print</button></div>`}
+ return `<div class="c"><b>New reconciliation (full store)</b><div class="f"><div><label>Title</label><input id="rt" placeholder="Annual stock count"></div><div><label>Prepared by *</label><input id="rb"></div><div><label>Blind count (hide system qty)</label><select id="rbl"><option value="">No</option><option value="1">Yes</option></select></div></div><button class="p" onclick="startRec()">Capture snapshot and start counting</button></div>
+ <div class="c t"><table><tr><th>No.</th><th>Title</th><th>Date</th><th>Status</th><th></th></tr>${S.recs.map(x=>`<tr><td>${x.id}</td><td>${esc(x.title)}</td><td>${fd(x.cutoff)}</td><td>${x.status}</td><td><button class="q" onclick="rid='${x.id}';draw()">Open</button></td></tr>`).join("")}</table></div>`}
+const vtxt=v=>v===null?'<span class="note">not counted</span>':`<span class="${v<0?"neg":v>0?"pos":""}">${v>0?"+":""}${v}</span>`;
+function startRec(){if(!S.books.length)return toast("Add books first");if(!$("#rb").value.trim())return toast("Prepared by is required");
+ if(S.recs.some(r=>r.status==="counting"))return toast("Finish or open the running reconciliation first");
+ const cutoff=Date.now(),id="REC-"+String(S.recs.length+1).padStart(3,"0");S.recs.push({id,title:$("#rt").value||"Stock count",cutoff,status:"counting",by:$("#rb").value.trim(),blind:!!$("#rbl").value,counts:{},lines:S.books.map(b=>({bookId:b.id,sys:stock(b.id,cutoff)}))});save();rid=id;draw()}
+function setC(i,k,v){const r=S.recs.find(x=>x.id===rid),l=r.lines[i];(r.counts[l.bookId]=r.counts[l.bookId]||{})[k]=v===""?"":+v;save();const x=recRows(r)[i];$("#vu"+i).innerHTML=vtxt(x.vu);$("#vd"+i).innerHTML=vtxt(x.vd);$("#rs").innerHTML=recSum(r)}
+function postRec(){const r=S.recs.find(x=>x.id===rid);if(r.status==="posted")return toast("Already posted");
+ const ap=$("#rap").value.trim(),why=$("#rrs").value.trim();if(!ap||!why)return toast("Approved by and reason are required");
+ const R=recRows(r),un=R.filter(x=>x.pu===null).length;if(un&&!confirm(un+" titles are not counted and will get no adjustment. Continue?"))return;
+ if(!confirm("Post adjustments to stock? This cannot be undone."))return;
+ try{for(const x of R){if(!x.vu)continue;const ref="ADJ-"+r.id+"-"+x.l.bookId;if(S.ledger.some(e=>e.ref===ref))continue;post({type:"adjust",ref,bookId:x.l.bookId,qty:x.vu,why:"Reconciliation "+r.id+": "+why,by:ap,link:r.id})}
+  Object.assign(r,{status:"posted",approver:ap,postedAt:Date.now(),reason:why});save();toast("Posted. Stock updated.");draw()}catch(e){toast(e.message||String(e))}}
+// ---- Excel export ----
+function stockRows(){return S.books.map(b=>{const s=stock(b.id);return {"Book ID":b.id,Title:b.title,Class:b.cls,Medium:b.medium,Subject:b.subject,ISBN:b.isbn,Publisher:b.pub,Edition:b.ed,"Usable":s.u,"Issued (outstanding)":s.i,Damaged:s.d,Lost:s.l,"Written off":s.w,"Purchase price":b.price,"Stock value":s.u*b.price}})}
+function ledRows(){return S.ledger.map(e=>({Date:fd(e.ts),Reference:e.ref,Type:TYPES[e.type][0],"Book ID":e.bookId,Title:bt(e.bookId),Quantity:e.qty,"Usable change":e.d.u||0,"Issued change":e.d.i||0,"Damaged change":e.d.d||0,"Lost change":e.d.l||0,"Written-off change":e.d.w||0,Linked:e.link,Note:e.note,"Done by":e.by}))}
+function recXRows(r){return recRows(r).map(x=>({Reconciliation:r.id,Title:r.title,"Cutoff date":fd(r.cutoff),"Book ID":x.l.bookId,Book:x.b.title,Class:x.b.cls,"System usable":x.l.sys.u,"Physical usable":x.pu??"Not counted","Usable variance":x.vu??"","System damaged":x.l.sys.d,"Physical damaged":x.pd??"","Damaged variance":x.vd??"","Value of variance (₹)":x.vu===null?"":x.vu*(x.b.price||0),Status:r.status,"Approved by":r.approver||""}))}
+function sheet(wb,n,rows){XLSX.utils.book_append_sheet(wb,XLSX.utils.json_to_sheet(rows.length?rows:[{Info:"No data"}]),n)}
+function exportAll(){if(typeof XLSX==="undefined")return toast("Excel library not loaded. Check internet connection.");
+ const wb=XLSX.utils.book_new();sheet(wb,"Current Stock",stockRows());sheet(wb,"Stock Ledger",ledRows());sheet(wb,"Reconciliation",S.recs.flatMap(recXRows));
+ sheet(wb,"Reconciliation Summary",S.recs.map(r=>{const R=recRows(r).filter(x=>x.vu!==null);return {Reconciliation:r.id,Title:r.title,Status:r.status,"Titles counted":R.length,"Titles not counted":r.lines.length-R.length,"Expected usable":R.reduce((a,x)=>a+x.l.sys.u,0),"Actual usable":R.reduce((a,x)=>a+x.pu,0),Shortage:R.filter(x=>x.vu<0).reduce((a,x)=>a+x.vu,0),Excess:R.filter(x=>x.vu>0).reduce((a,x)=>a+x.vu,0),"Approved by":r.approver||""}}));
+ XLSX.writeFile(wb,"MPS-Book-Stock-"+fd(Date.now())+".xlsx")}
+function exportRec(id){const r=S.recs.find(x=>x.id===id),wb=XLSX.utils.book_new();sheet(wb,"Reconciliation",recXRows(r));XLSX.writeFile(wb,"MPS-"+id+".xlsx")}
+function vExp(){return `<div class="c"><b>Excel report</b><p>One Excel file with Current Stock, Stock Ledger, Reconciliation and Reconciliation Summary sheets.</p><button class="p" onclick="exportAll()">Download Excel (.xlsx)</button></div>
+ <div class="c"><b>Backup and restore</b><p class="note">Data is saved in this browser only. Download a backup file regularly and keep it safe (Google Drive or pen drive).</p><button class="p b" onclick="backup()">Download backup (.json)</button><label>Restore from backup file (replaces current data)</label><input type="file" accept=".json" onchange="restore(this.files[0])"></div>`}
+function backup(){const a=document.createElement("a");a.href=URL.createObjectURL(new Blob([JSON.stringify(S)],{type:"application/json"}));a.download="mps-backup-"+fd(Date.now())+".json";a.click()}
+function restore(f){if(!f||!confirm("This replaces all current data. Continue?"))return;const r=new FileReader();r.onload=()=>{try{const d=JSON.parse(r.result);if(!d.books||!d.ledger)throw 0;S=Object.assign({books:[],ledger:[],recs:[]},d);save();toast("Backup restored");draw()}catch(e){toast("Invalid backup file")}};r.readAsText(f)}
+draw();
+</script></body></html>
