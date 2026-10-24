@@ -43,7 +43,7 @@ main>*{animation:up .45s both}main>*:nth-child(2){animation-delay:.1s}main>*:nth
 const $=s=>document.querySelector(s),esc=s=>String(s??"").replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
 const fd=d=>new Date(d).toLocaleDateString("en-GB",{timeZone:"Asia/Kolkata"}).replace(/\//g,"-");
 // ===== FIREBASE SETTINGS: paste your values from the Firebase console between the quotes =====
-const FIREBASE_CONFIG={apiKey:"PASTE_API_KEY",authDomain:"PASTE_AUTH_DOMAIN",projectId:"PASTE_PROJECT_ID",appId:"PASTE_APP_ID"};
+const FIREBASE_CONFIG={apiKey:"AIzaSyC1za5qmjquAfUsf6xIsUIgTe-urKbYG4o",authDomain:"mps-book-stock.firebaseapp.com",projectId:"mps-book-stock",appId:"1:684286950660:web:c02019dbf8af38d1c16451"};
 // ===========================================================================================
 const CONFIGURED=!FIREBASE_CONFIG.apiKey.startsWith("PASTE");
 let S={books:[],ledger:[],recs:[],users:[],settings:{}},db=null,auth=null,AUTHED=false,NOPROF=false,SETUP=false,UNS=[],LOADED=new Set(),defer=false,RC=0,setupMode=false;
