@@ -70,9 +70,11 @@ function addBook(){const v=i=>$("#"+i).value.trim();if(!v("bt")||!v("bc"))return
  if(v("bi")&&S.books.some(b=>b.isbn===v("bi")))return toast("This ISBN already exists");
  const id="BK-"+String(Math.max(0,...S.books.map(b=>+b.id.slice(3)||0),...S.ledger.map(e=>+e.bookId.slice(3)||0),...S.recs.flatMap(r=>r.lines.map(l=>+l.bookId.slice(3)||0)))+1).padStart(4,"0");S.books.push({id,title:v("bt"),cls:v("bc"),medium:v("bm"),subject:v("bs"),isbn:v("bi"),pub:v("bp"),ed:v("be"),price:+v("bpr")||0,min:+v("bmn")||0});save();toast("Saved "+id);draw()}
 function delBook(id){const b=S.books.find(x=>x.id===id);if(!b)return;
- if(S.ledger.some(e=>e.bookId===id))return toast("Cannot delete: this book already has stock transactions. They must stay in the ledger for records.");
- if(S.recs.some(r=>r.lines.some(l=>l.bookId===id)))return toast("Cannot delete: this book is part of a stock reconciliation record.");
- if(!confirm("Delete wrongly entered book?\n\n"+b.title+" ("+b.cls+")\n\nThis cannot be undone."))return;
+ if(S.recs.some(r=>r.status==="posted"&&r.lines.some(l=>l.bookId===id)))return toast("Cannot delete: this book is part of a posted reconciliation record.");
+ const n=S.ledger.filter(e=>e.bookId===id).length;
+ if(!confirm("Delete wrongly entered book?\n\n"+b.title+" ("+b.cls+")"+(n?"\n\nWARNING: its "+n+" stock transaction(s) will also be permanently deleted from the ledger.":"")+"\n\nThis cannot be undone. Download a backup first if unsure."))return;
+ if(n&&prompt("Type DELETE to confirm")!=="DELETE")return toast("Delete cancelled");
+ S.ledger=S.ledger.filter(e=>e.bookId!==id);S.recs.forEach(r=>{r.lines=r.lines.filter(l=>l.bookId!==id);delete r.counts[id]});
  S.books=S.books.filter(x=>x.id!==id);save();toast("Book deleted");draw()}
 function vTx(){const f=TYPES[txType][1],h=x=>f.includes(x),is=S.ledger.filter(e=>e.type==="issue"&&e.ret&&outstanding(e.ref)>0);
  return `<div class="c"><div class="f"><div><label>Transaction</label><select onchange="txType=this.value;draw()">${Object.entries(TYPES).map(([k,v])=>`<option value="${k}" ${k===txType?"selected":""}>${v[0]}</option>`).join("")}</select></div>
